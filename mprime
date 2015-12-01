@@ -1,0 +1,147 @@
+#!/bin/bash
+# Init script for MPrime on Debian Linux
+# Written by Ben Lawrenson, public domain, use on your own risk.
+#
+
+### BEGIN INIT INFO
+# Provides: mprime
+# Required-Start: $local_fs $remote_fs
+# Required-Stop: $local_fs $remote_fs
+# Should-Start: $network
+# Should-Stop: $network
+# Default-Start: 2 3 4 5
+# Default-Stop: 0 1 6
+# Short-Description: MPrime Service
+# Description: Starts the MPrime Service
+### END INIT INFO
+
+# Settings
+USER='mprime'
+
+mp_start() {
+echo "*** Starting MPrime Service..."
+if ps ax | grep -v grep | grep /usr/lib/mprime/startmprime > /dev/null; then
+echo "*** MPrime may already be running"
+read -p "Try stop? (y/n) " RESP
+if [ "$RESP" = "y" ]; then
+mp_stop
+sleep 1
+else
+exit 1
+fi
+fi
+env TERM="xterm" \
+start-stop-daemon \
+--start \
+--make-pidfile \
+--pidfile /var/run/mprime.pid \
+--background \
+--user $USER \
+--name mprime \
+--chdir /usr/lib/mprime \
+--nicelevel 19 \
+--exec /usr/bin/screen -- -D -m -S mprimed /usr/lib/mprime/startmprime
+sleep 1
+if ps ax | grep -v grep | grep /usr/lib/mprime/startmprime > /dev/null; then
+echo "*** MPrime is now running."
+exit 0
+else
+echo "*** MPrime failed to start."
+exit 1
+fi
+}
+
+mp_stop() {
+echo "*** Stopping MPrime server..."
+
+if ps ax | grep -v grep | grep /usr/lib/mprime/startmprime > /dev/null; then
+echo "*** MPrime running"
+else
+echo "*** MPrime not running."
+exit 0
+fi
+echo "*** Attemping Conventional Stop..."
+screen -p 0 -S mprimed -X eval 'stuff \003'
+sync
+cnt=0
+while :
+do
+sleep 1
+if ps ax | grep -v grep | grep /usr/lib/mprime/startmprime > /dev/null; then
+cnt=$(( $cnt + 1 ))
+else
+break
+fi
+if [ $cnt -eq 10 ]; then
+break
+fi
+done
+
+if [ -e /var/run/mprime.pid ]; then
+read PID < /var/run/mprime.pid
+if ps ax | grep -v grep | grep ${PID} | grep /usr/lib/mprime/startmprime > /dev/null; then
+echo '*** Conventional Stop Failed... Attempting Forced Stop...'
+start-stop-daemon \
+--stop \
+--signal 15 \
+--pidfile /var/run/mprime.pid
+fi
+fi
+
+if ps ax | grep -v grep | grep /usr/lib/mprime/startmprime > /dev/null; then
+echo "*** MPrime may still be running... "
+read -p "Force kill all? (y/n) " RESP
+if [ "$RESP" = "y" ]; then
+killall mprime
+sleep 3
+if ps ax | grep -v grep | grep /usr/lib/mprime/startmprime > /dev/null; then
+echo "*** MPrime may STILL be running... Please kill manually"
+exit 1
+else
+echo "*** MPrime has stopped."
+exit 0
+fi
+fi
+else
+echo "*** MPrime has stopped."
+exit 0
+fi
+}
+
+mp_status() {
+if ps ax | grep -v grep | grep /usr/lib/mprime/startmprime > /dev/null; then
+echo "*** MPrime appears to be running"
+/usr/lib/mprime/mprime -s
+exit 0
+else
+echo "*** MPrime doesn't appear to be running"
+exit 1
+fi
+}
+
+mp_log() {
+read -p "Number of lines to display? " RESP
+tail -$RESP /var/log/mprime.log
+exit 0
+}
+
+
+case "$1" in
+start)
+mp_start
+;;
+stop)
+mp_stop
+;;
+status)
+mp_status
+;;
+log)
+mp_log
+;;
+*)
+echo "Usage: /etc/init.d/mprime {start|stop|status|log(lines)}"
+echo " ...and hope that it works!"
+;;
+esac
+
